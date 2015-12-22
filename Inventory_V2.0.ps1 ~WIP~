@@ -1,0 +1,687 @@
+<#
+.Synopsis
+   Displays a list of all Windows compliant hardware attached to a network.
+.DESCRIPTION
+   This scripted module combines a number of elements to take a simplistic hardware inventory of all Windows items attached to a network
+   that are listed on the DHCP server.
+
+   A list is first created using the Network Shell command (netsh) in conjunction with a few parameters to give first the scopes on the network,
+   afterwhich another run through of the command is performed for each subnet found.
+
+   This list is used to perform the crawling inventory on each system; each item, if responsive, will be recorded in an Excel spreadsheet, with
+   some basic status and statistics listed along the corresponding row.
+
+   After finishing the search, the Excel spreadsheet will automatically save, tagging itself with the date it was performed.
+   
+.EXAMPLE
+   System-Inventory
+   This is the base configuration, scanning all scopes and reporting back on any Windows systems found.
+.EXAMPLE
+   System-Inventory -CompName "Archimedes"
+   Performs script with computer named Archimedes only.
+.EXAMPLE
+   System-Inventory -CompIP "192.168.20.88" 
+   Performs script with computer IP 192.168.20.88 only.
+.EXAMPLE
+   System-Inventory -SubnetScope "192.168.20.0"
+   Reports back on systems only on subnet 192.168.20.0.
+.INPUTS
+   Inputs to this cmdlet (if any)
+.OUTPUTS
+   Output from this cmdlet (if any)
+.NOTES
+   General notes
+.COMPONENT
+   The component this cmdlet belongs to
+.ROLE
+   The role this cmdlet belongs to
+.FUNCTIONALITY
+   The functionality that best describes this cmdlet
+#>
+Function System-Inventory
+{
+Param(
+#[Parameter(ParameterSetName="A")]
+$CompName="",
+#[Parameter(ParameterSetName="B")]
+$CompIP="",
+$DHCPServer="192.168.10.15",
+$SubnetScope="",
+$SubnetScopeNot="",
+$Make="",
+$MakeNot="",
+$Model="",
+$ModelNot="",
+$Owner="",
+$OwnerNot="",
+$OSVer="",
+$OSVerNot="",
+$OSArch="",
+$OSArchNot="",
+$CPUModel="",
+$CPUModelNot="",
+[decimal]$CPUSpeedLessThan="",
+[decimal]$CPUSpeedMoreThan="",
+[decimal]$HDDSpaceFreeLessThan="",
+[decimal]$HDDSpaceFreeMoreThan="",
+[decimal]$HDDSpaceTotalLessThan="",
+[decimal]$HDDSpaceTotalMoreThan="",
+[decimal]$RAMLessThan="",
+[decimal]$RAMMoreThan="",
+$GPU="",
+$GPUNot="",
+[switch]$IgnoreUnresponsive=$False,
+[switch]$Quick=$False
+)
+    Begin  {
+        $datenormal = Get-Date
+        $date = $datenormal.tostring("yyyyMMdd")
+        
+        $ScopeList = (netsh dhcp server $DHCPServer show scope)
+        $Scopes = $ScopeList[5..($ScopeList.Length -4)]
+        Foreach($Line in $Scopes){
+            $Scope = $Line.split(" ")
+            $Subnet =$Scope[1]
+            if ($SubnetScope -ne ""){if (-not $Subnet.contains($SubnetScope)){continue}}
+            if ($SubnetScopeNot -ne ""){if ($Subnet.contains($SubnetScopeNot)){continue}}
+            $SubnetClients = (netsh dhcp server $DHCPServer scope $Subnet show clients 1)
+            $ClientList = $SubnetClients[8..($SubnetClients.Length -5)]
+            Foreach($Client in $ClientList){
+                $test = ($Client -match "-D-")
+                if( $test -like "True"){
+                    $Client = $Client.Split(" ")
+                    $IP = $Client[0]
+                    $IP | Out-File -FilePath .\DHCPComputer$date.txt -Append
+                    $ClientName = $Client[$Client.Length-1]
+                    $ClientName | Out-File -FilePath .\DHCPName$date.txt -Append}}}
+
+        If ($CompName -ne "") { $computers = $CompName}
+            ElseIf ($CompIP -ne "") { $computers =$CompIP}
+            #Else {$Computers = Get-Content .\Computertest.txt}
+            Else {$computers = Get-Content .\DHCPComputer$date.txt}
+        
+        $excel = New-Object -ComObject Excel.Application
+        $excel.Visible = $true
+        $excelbook = $excel.Workbooks.Add()
+        $excelitem = $excelbook.Worksheets.Item(1)
+        $excelitem.Name = "Inventory_" + $date
+        $excelbook.Title = "Inventory_" + $date
+        $excelname = "Inventory_" + $date
+        [int]$excelRow = "2"
+        
+        $excelitem.Cells.Item(1,1) = "Machine Name"
+        $excelitem.Cells.Item(1,2) = "IP Address"
+        $excelitem.Cells.Item(1,3) = "Manufacture"
+        $excelitem.Cells.Item(1,4) = "Model"
+        $excelitem.Cells.Item(1,5) = "Owner"
+        $excelitem.Cells.Item(1,6) = "OS Version"
+        $excelitem.Cells.Item(1,7) = "OS Architecture"
+        $excelitem.Cells.Item(1,8) = "CPU"
+        $excelitem.Cells.Item(1,9) = "CPU Speed"
+        $excelitem.Cells.Item(1,10) = "HDD"
+        $excelitem.Cells.Item(1,11) = "RAM"
+        $excelitem.Cells.Item(1,12) = "GPU"
+        $excelitem.Cells.Item(1,13) = "Office 2000"
+        $excelitem.Cells.Item(1,14) = "Office XP"
+        $excelitem.Cells.Item(1,15) = "Office 2003"
+        $excelitem.Cells.Item(1,16) = "Office 2007"
+        $excelitem.Cells.Item(1,17) = "Office 2010"
+        $excelitem.Cells.Item(1,18) = "Office 2013"
+        $excelitem.Cells.Item(1,19) = "Outlook 2003"
+        $excelitem.Cells.Item(1,20) = "Project 2007"
+        $excelitem.Cells.Item(1,21) = "Project 2010"
+        $excelitem.Cells.Item(1,22) = "Project 2013"
+        $excelitem.Cells.Item(1,23) = "Project Server 2010"
+        $excelitem.Cells.Item(1,24) = "Project Server 2013"
+        $excelitem.Cells.Item(1,25) = "Visio 2003"
+        $excelitem.Cells.Item(1,26) = "Visio 2007"
+        $excelitem.Cells.Item(1,27) = "Visio 2010"
+        $excelitem.Cells.Item(1,28) = "Visio 2013"
+
+        $range = $excelItem.UsedRange 
+        $range.Font.Bold = $True
+        $range.EntireColumn.AutoFit()
+
+        Function Get-WmiObjectQuick([string]$ComputerName,[string]$class,[int]$timeout=3,[string]$QuickFilter){
+            try{
+                $namespace = "root\cimv2"
+                $ErrorActionPreference = "Stop"
+                
+                $ConnectionOptions = new-object System.Management.ConnectionOptions 
+                $EnumerationOptions = new-object System.Management.EnumerationOptions
+                
+                $timeoutseconds = new-timespan -seconds $timeout 
+                $EnumerationOptions.set_timeout($timeoutseconds)
+                $ConnectionOptions.set_timeout($timeoutseconds)
+                
+                $assembledpath = "\\" + $ComputerName + "\" + $namespace 
+                
+                $Scope = new-object System.Management.ManagementScope $assembledpath, $ConnectionOptions
+                
+                $querystring = "SELECT * FROM " + $class
+                if ($QuickFilter -ne "") { $querystring = $querystring + " WHERE " + $QuickFilter}
+                $query = new-object System.Management.ObjectQuery $querystring 
+                $searcher = new-object System.Management.ManagementObjectSearcher 
+                $searcher.set_options($EnumerationOptions)
+                
+                $Scope.Connect()
+                
+                $searcher.Query = $query 
+                $searcher.Scope = $Scope
+                
+                trap { $_ } $result = $searcher.get()
+                
+                return $result}
+            catch { continue }}
+        Function Add-ToExcel(){
+            $excelitem.Cells.Item($excelRow,1) = $System.Name
+            $excelitem.Cells.Item($excelRow,2) = $computer
+            $excelitem.Cells.Item($excelRow,3) = $System.Manufacturer
+            $excelitem.Cells.Item($excelRow,4) = $System.Model
+            $excelitem.Cells.Item($excelRow,5) = $System.PrimaryOwnerName
+            $excelitem.Cells.Item($excelRow,6) = $OS.Caption
+            $excelitem.Cells.Item($excelRow,7) = $OS.OSArchitecture
+            $excelitem.Cells.Item($excelRow,8) = $CPU.Name
+            $excelitem.Cells.Item($excelRow,9) = $CPUSpeed
+            $excelitem.Cells.Item($excelRow,10) = $Disk
+            $excelitem.Cells.Item($excelRow,11) = $Memory
+            $excelitem.Cells.Item($excelRow,12) = $Graphics
+            
+            $excelitem.Cells.Item($excelRow,13) = $Office2000
+            $excelitem.Cells.Item($excelRow,14) = $OfficeXP
+            $excelitem.Cells.Item($excelRow,15) = $Office2003
+            $excelitem.Cells.Item($excelRow,16) = $Office2007
+            $excelitem.Cells.Item($excelRow,17) = $Office2010
+            $excelitem.Cells.Item($excelRow,18) = $Office2013
+            $excelitem.Cells.Item($excelRow,19) = $Outlook2003
+            $excelitem.Cells.Item($excelRow,20) = $Project2007
+            $excelitem.Cells.Item($excelRow,21) = $Project2010
+            $excelitem.Cells.Item($excelRow,22) = $Project2013
+            $excelitem.Cells.Item($excelRow,23) = $ProjectServer2010
+            $excelitem.Cells.Item($excelRow,24) = $ProjectServer2013
+            $excelitem.Cells.Item($excelRow,25) = $Visio2003
+            $excelitem.Cells.Item($excelRow,26) = $Visio2007
+            $excelitem.Cells.Item($excelRow,27) = $Visio2010
+            $excelitem.Cells.Item($excelRow,28) = $Visio2013
+            
+            
+            
+            }
+        Function ConnectionTest(){
+            For ($j = 1; $j -le 1; $j++){
+                Write-Host "Attempting to reach $computer..." " Try #"$j
+                $ConnectTest = Test-Connection -ComputerName $computer -Quiet -Count 1
+                if ($ConnectTest -eq $True){Break}}
+            If ($ConnectTest -ne $True) {$computer | Out-File .\UnreachableComputers$date.txt -Append
+            Continue}
+            $computer | Out-File .\ActiveComputers$date.txt -Append}
+
+        Function Get-Uninstall(){
+            # paths: x86 and x64 registry keys are different
+            if ([IntPtr]::Size -eq 4) {
+                $path = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+            }
+            else {
+                $path = @(
+                    'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+                    'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+                )
+            }
+
+            # get all data
+            Get-ItemProperty $path |
+            # use only with name and unistall information
+            .{process{ if ($_.DisplayName -and $_.UninstallString) { $_ } }} |
+            # select more or less common subset of properties
+            Select-Object DisplayName, Publisher, InstallDate, DisplayVersion, HelpLink, UninstallString |
+            # and finally sort by name
+            Sort-Object DisplayName}
+            
+
+        }
+
+    Process {
+        foreach ($computer in $computers) {ConnectionTest}
+        $computers = Get-Content .\ActiveComputers$date.txt
+        #$computers = "192.168.12.60"
+        for ($j=0; $j -lt $computers.Count; $j++) {
+        if ($computers.Count -gt 1) {
+            $computer = $computers[$j]}
+            Else {$computer = $computers}
+        write-host "Acquiring system information for "$computer
+
+            $IP = ""
+            $Disk = ""
+            $Mem = ""
+            $Memory = ""
+            $Graphics = ""
+            $Capacity = ""
+            $CapacityTotal = ""
+            $CPUSpeed = ""
+            $TotalFree = ""
+            $TotalSize = ""
+            $DiskTest = ""
+            $Software = ""
+            Try {
+                if ($IgnoreUnresponsive -eq $True) { trap {$_} $OS = Get-WMIObjectQuick -Class Win32_OperatingSystem -ComputerName $computer -ErrorAction stop}
+                    else {$OS = Get-WmiObject -Class Win32_OperatingSystem -ComputerName $computer -ErrorAction stop}
+                if ($OSVerNot -ne "") { if( $OS.Caption.tolower().contains($OSVerNot.tolower())){ Continue }}
+                if ($OSVer -ne "") { if( -not $OS.Caption.tolower().contains($OSVer.tolower())){ Continue }}
+                if ($OSArchNot -ne "") { if( $OS.OSArchitecture.tolower().contains($OSArchNot.tolower())){ Continue }}
+                if ($OSArch -ne "") { if( -not $OS.OSArchitecture.tolower().contains($OSArch.tolower())){ Continue }}
+                
+                if ($IgnoreUnresponsive -eq $True) {$System = Get-WmiObjectQuick -Class Win32_ComputerSystem -ComputerName $computer -ErrorAction stop}
+                    else {$System = Get-WmiObject -Class Win32_ComputerSystem -ComputerName $computer -ErrorAction stop}
+                if ($MakeNot -ne "") { if( $System.Manufacturer.tolower().contains($MakeNot.tolower())){ Continue }}
+                if ($Make -ne "") { if( -not $System.Manufacturer.tolower().contains($Make.tolower())){ Continue }}
+                if ($ModelNot -ne "") { if( $System.Model.tolower().contains($ModelNot.tolower())){ Continue }}
+                if ($Model -ne "") { if( -not $System.Model.tolower().contains($Model.tolower())){ Continue }}
+                if ($OwnerNot -ne "") { if( $System.PrimaryOwnerName.tolower().contains($OwnerNot.tolower())){ Continue }}
+                if ($Owner -ne "") { if( -not $System.PrimaryOwnerName.tolower().contains($Owner.tolower())){ Continue }}
+                
+                if ($IgnoreUnresponsive -eq $True) {$CPU = Get-WmiObjectQuick -Class Win32_Processor -ComputerName $computer -ErrorAction stop}
+                    else {$CPU = Get-WmiObject -Class Win32_Processor -ComputerName $computer -ErrorAction stop}
+                if ($CPUModelNot -ne "") { if( $CPU.Name.tolower().contains($CPUModelNot.tolower())){ Continue }}
+                if ($CPUModel -ne "") { if( -not $CPU.Name.tolower().contains($CPUModel.tolower())){ Continue }}
+                
+                [decimal]$CPUClock = $CPU.MaxClockSpeed
+                $CPUClock = $CPUClock/100
+                $CPUClock = [decimal]::round($CPUClock)
+                [string]$CPUSpeed = ($CPUClock/10) -as [string]
+                $CPUSpeed = $CPUSpeed + "GHz"
+                if ($CPUSpeedLessThan -ne "") { if( $CPUSpeed -gt $CPUSpeedLessThan ){ Continue }}
+                if ($CPUSpeedMoreThan -ne "") { if( $CPUSpeed -lt $CPUSpeedMoreThan ){ Continue }}
+                $DiskTest = ""
+                if ($IgnoreUnresponsive -eq $True) {$DiskList = Get-WmiObjectQuick -Class Win32_LogicalDisk -ComputerName $computer -ErrorAction stop -QuickFilter DriveType='3'
+                    $DiskTest = $DiskList[0..$DiskList.Length]}
+                if ($DiskTest -ne "") {$DiskList = $Disktest}
+                    else {$DiskList = Get-WmiObject -Class Win32_LogicalDisk -ComputerName $computer -ErrorAction stop -Filter DriveType='3'}
+                $Device = $DiskList.DeviceID
+                Foreach($Device in $DiskList) {
+                    $Size = [decimal]::round($Device.Size/1gb)
+                    $Free = [decimal]::round($Device.Freespace/1gb)
+                    $Disk = $Disk + ($Device.DeviceID  + $Size + "GB Total - " + $Free + "GB Free, ")
+                    $TotalFree = $TotalFree + $Free
+                    $TotalSize = $TotalSize + $Size
+                    }
+                if ($HDDSpaceFreeLessThan -ne "") { if( $TotalFree -gt $HDDSpaceFreeLessThan ){ Continue }}
+                if ($HDDSpaceFreeMoreThan -ne "") { if( $TotalFree -lt $HDDSpaceFreeMoreThan ){ Continue }}
+                if ($HDDSpaceTotalLessThan -ne "") { if( $TotalSize -gt $HDDSpaceTotalLessThan ){ Continue }}
+                if ($HDDSpaceTotalMoreThan -ne "") { if( $TotalSize -lt $HDDSpaceTotalMoreThan ){ Continue }}
+
+                if ($IgnoreUnresponsive -eq $True) {$MemoryList = Get-WmiObjectQuick -Class Win32_PhysicalMemory -ComputerName $computer -ErrorAction stop}
+                    else {$MemoryList = Get-WmiObject -Class Win32_PhysicalMemory -ComputerName $computer -ErrorAction stop}
+                $MemoryID = $MemoryList.DeviceLocator
+                Foreach($MemoryID in $MemoryList) {
+                    $Capacity = [decimal]::round($MemoryID.Capacity/1gb)
+                    $Manufacture = $MemoryID.Manufacturer
+                    [decimal]$CapacityTotal = $CapacityTotal + ($MemoryID.Capacity/1gb)
+                    [string]$Mem = $Mem + (" " + $Capacity + "GB " + $Manufacture + " ")}
+                $CapacityTotal = "{0:F2}" -f $CapacityTotal
+                $Memory = "(" + $Mem + ") " + $CapacityTotal + " GB Total"
+                if ($RAMLessThan -ne "") { if( $CapacityTotal -gt $RAMLessThan ){ Continue }}
+                if ($RAMMoreThan -ne "") { if( $CapacityTotal -lt $RAMMoreThan ){ Continue }}
+                
+                if ($IgnoreUnresponsive -eq $True) {$VideoList = Get-WmiObjectQuick -Class Win32_VideoController -ComputerName $computer -ErrorAction stop}
+                    else {$VideoList = Get-WmiObject -Class Win32_VideoController -ComputerName $computer -ErrorAction stop}
+                $VideoID = $VideoList.DeviceID
+                [string]$Graphics = $VideoList.Caption
+                if ($GPUNot -ne "") { if( $Graphics.tolower().contains($GPUNot.tolower())){ Continue }}
+                if ($GPU -ne "") { if( -not $Graphics.tolower().contains($GPU.tolower())){ Continue }}
+
+                if ($CompName -ne "") { $IP = get-wmiobject win32_networkadapterconfiguration -ComputerName $computer -Filter DHCPEnabled="True" -ErrorAction stop
+                    $computer = $IP.IPAddress[0]}
+
+        write-host "before software"
+                #$Software = Get-WmiObject -Class Win32_Product -ComputerName $computer -ErrorAction stop
+                #$test = Invoke-Command -ComputerName $System.Name -ScriptBlock {Get-Uninstall} -credential BLANK #-Authentication Kerberos
+
+                $software32 = ""
+                $software64 = ""
+                For ($l = 0; $l -lt 3; $l++) {
+                    If ($software32 = "") {
+                        $software32 = Get-RegKey -key Software\Microsoft\Windows\CurrentVersion\Uninstall -ComputerName $computer -recurse | Get-RegValue -recurse | Select *
+                        }
+                    }
+                For ($l = 0; $l -lt 3; $l++) {
+                    If ($software64 ="") {
+                        $software64 = Get-RegKey -key Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall -ComputerName $computer -recurse | Get-RegValue -recurse | Select *
+                        }
+                    }
+                $software = $software32 + $software64
+
+         write-host "after software"
+                
+                $Office2000 = ""
+                $OfficeXP = ""
+                $Office2003 = ""
+                $Office2007 = ""
+                $Office2010 = ""
+                $Office2013 = ""
+
+                $Outlook2003 = ""
+
+                $Project2007 = ""
+                $Project2010 = ""
+                $Project2013 = ""
+                $ProjectServer2010 = ""
+                $ProjectServer2013 = ""
+
+                $Visio2003 = ""
+                $Visio2007 = ""
+                $Visio2010 = ""
+                $Visio2013 = ""
+
+                For ($i=0; $i -lt $Software.Length; $i++) {
+
+                #Win 2000 Software
+                    If ($Software[$i] -like "*??17????-*") {
+                        If ($Software[$i] -like "*Office*2000*") {
+                            $Office2000 = "Standard"} }
+                    If ($Software[$i] -like "*??02????-*") {
+                        If ($Software[$i] -like "*Office*2000*") {
+                            $Office2000 = "Standard"} }
+                    If ($Software[$i] -like "*??00????-*") {
+                        If ($Software[$i] -like "*Office*2000*") {
+                            $Office2000 = "Premium"} }
+                    If ($Software[$i] -like "*??04????-*") {
+                        If ($Software[$i] -like "*Office*2000*") {
+                            $Office2000 = "Premium"} }
+                    If ($Software[$i] -like "*??03????-*") {
+                        If ($Software[$i] -like "*Office*2000*") {
+                            $Office2000 = "Small Business"} }
+                    If ($Software[$i] -like "*??01????-*") {
+                        If ($Software[$i] -like "*Office*2000*") {
+                            $Office2000 = "Professional"} }                          
+
+                #Win XP Software
+                    If ($Software[$i] -like "*??1B????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*XP*") {
+                            $OfficeXP = "Version Unknown"} }
+                    If ($Software[$i] -like "*??12????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*XP*") {
+                            $OfficeXP = "Standard"} }
+                    If ($Software[$i] -like "*??13????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*XP*") {
+                            $OfficeXP = "Small Business"} }
+                    If ($Software[$i] -like "*??11????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*XP*") {
+                            $OfficeXP = "Professional"} }
+
+                #Win 2003 Software
+                    If ($Software[$i] -like "*??1B????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Office2003 = "Version Unknown"} }
+                    If ($Software[$i] -like "*??13????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Office2003 = "Basic"} }
+                    If ($Software[$i] -like "*??12????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Office2003 = "Standard"} }
+                    If ($Software[$i] -like "*??CA????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Office2003 = "Small Business"} }
+                    If ($Software[$i] -like "*??E3????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Office2003 = "Professional"} }
+                    If ($Software[$i] -like "*??11????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Office2003 = "Professional Enterprise"} }
+                    If ($Software[$i] -like "*??E0????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Outlook2003 = "Standard"} }
+                    If ($Software[$i] -like "*??1A????-????-????-????-*") {
+                        If ($Software[$i] -like "*Office*2003*") {
+                            $Outlook2003 = "Professional"} }
+                    If ($Software[$i] -like "*??53????-????-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2003*") {
+                            $Visio2003 = "Standard"} }
+                    If ($Software[$i] -like "*??51????-????-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2003*") {
+                            $Visio2003 = "Professional"} }
+
+                #Win 2007 Software
+                    If ($Software[$i] -like "*-001B-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Version Unknown"} }
+                    If ($Software[$i] -like "*-0013-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Basic"} }
+                    If ($Software[$i] -like "*-0012-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Standard"} }
+                    If ($Software[$i] -like "*-0014-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Professional"} }
+                    If ($Software[$i] -like "*-0011-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Professional Plus"} }
+                    If ($Software[$i] -like "*-00CA-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Small Business"} }
+                    If ($Software[$i] -like "*-0030-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Enterprise"} }
+                    If ($Software[$i] -like "*-002E-????-????-*") {
+                        If ($Software[$i] -like "*Office*2007*") {
+                            $Office2007 = "Ultimate"} }
+                    If ($Software[$i] -like "*-0053-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2007*") {
+                            $Visio2007 = "Standard"} }
+                    If ($Software[$i] -like "*-0051-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2007*") {
+                            $Visio2007 = "Professional"} }
+                    If ($Software[$i] -like "*-003A-????-????-*") {
+                        If ($Software[$i] -like "*Project*2007*") {
+                            $Project2007 = "Standard"} }
+                    If ($Software[$i] -like "*-003B-????-????-*") {
+                        If ($Software[$i] -like "*Project*2007*") {
+                            $Project2007 = "Professional"} }
+
+                #Win 2010 Software
+                    If ($Software[$i] -like "*-001B-????-????-*") {
+                        If ($Software[$i] -like "*Office*2010*") {
+                            $Office2010 = "Version Unknown"} }
+                    If ($Software[$i] -like "*-0012-????-????-*") {
+                        If ($Software[$i] -like "*Office*2010*") {
+                            $Office2010 = "Standard"} }
+                    If ($Software[$i] -like "*-0013-????-????-*") {
+                        If ($Software[$i] -like "*Office*2010*") {
+                            $Office2010 = "Home and Business"} }
+                    If ($Software[$i] -like "*-0014-????-????-*") {
+                        If ($Software[$i] -like "*Office*2010*") {
+                            $Office2010 = "Professional"} }
+                    If ($Software[$i] -like "*-0011-????-????-*") {
+                        If ($Software[$i] -like "*Office*2010*") {
+                            $Office2010 = "Professional Plus"} }
+                    If ($Software[$i] -like "*-003A-????-????-*") {
+                        If ($Software[$i] -like "*Project*2010*") {
+                            $Project2010 = "Standard"} }
+                    If ($Software[$i] -like "*-003B-????-????-*") {
+                        If ($Software[$i] -like "*Project*2010*") {
+                            $Project2010 = "Professional"} }
+                    If ($Software[$i] -like "*-110F-????-????-*") {
+                        If ($Software[$i] -like "*Project*2010*") {
+                            $ProjectServer2010 = "Yes"} }
+                    If ($Software[$i] -like "*-0057-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2010*") {
+                            If ($Software[$i] -like "*Standard*") {
+                                $Visio2010 = "Standard"}
+                            If ($Software[$i] -like "*Premium*") {
+                                $Visio2010 = "Premium"}
+                            If ($Software[$i] -like "*Professional*") {
+                                $Visio2010 = "Professional"} }}
+
+                #Win 2013 Software
+                    If ($Software[$i] -like "*-001B-????-????-*") {
+                        If ($Software[$i] -like "*Office*2013*") {
+                            $Office2013 = "Version Unknown"} }
+                    If ($Software[$i] -like "*-0012-????-????-*") {
+                        If ($Software[$i] -like "*Office*2013*") {
+                            $Office2013 = "Standard"} }
+                    If ($Software[$i] -like "*-0013-????-????-*") {
+                        If ($Software[$i] -like "*Office*2013*") {
+                            $Office2013 = "Home and Business"} }
+                    If ($Software[$i] -like "*-0014-????-????-*") {
+                        If ($Software[$i] -like "*Office*2013*") {
+                            $Office2013 = "Professional"} }
+                    If ($Software[$i] -like "*-0011-????-????-*") {
+                        If ($Software[$i] -like "*Office*2013*") {
+                            $Office2013 = "Professional Plus"} }
+                    If ($Software[$i] -like "*-003A-????-????-*") {
+                        If ($Software[$i] -like "*Project*2013*") {
+                            $Project2013 = "Standard"} }
+                    If ($Software[$i] -like "*-003B-????-????-*") {
+                        If ($Software[$i] -like "*Project*2013*") {
+                            $Project2013 = "Professional"} }
+                    If ($Software[$i] -like "*-110F-????-????-*") {
+                        If ($Software[$i] -like "*Project*2013*") {
+                            $ProjectServer2013 = "Yes"} }
+                    If ($Software[$i] -like "*-0053-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2013*") {
+                            $Visio2013 = "Standard"} }
+                    If ($Software[$i] -like "*-0051-????-????-*") {
+                        If ($Software[$i] -like "*Visio*2013*") {
+                            $Visio2013 = "Professional"} }
+                            #Write-Host "test $i" 
+                    }  
+                
+                Add-ToExcel
+
+                $excelRow = $excelRow + 1
+                }                                             
+
+            Catch {
+                if ($IgnoreUnresponsive -eq $True){ Continue }
+                    else { Write-Host "The computer " $computer " is currently unavailable."
+                       $computer | Out-File -FilePath .\Failed$date.txt -Append }}
+            Finally {}
+            }
+        
+      <#  $Init_Script = {
+            $CompName=$CompName
+            $CompIP=$CompIP
+            $SubnetScope=$SubnetScope
+            $Make=$Make
+            $MakeNot=$MakeNot
+            $Model=$Model
+            $ModelNot=$ModelNot
+            $Owner=$Owner
+            $OwnerNot=$OwnerNot
+            $OSVer=$OSVer
+            $OSVerNot=$OSVerNot
+            $OSArch=$OSArch
+            $OSArchNot=$OSArchNot
+            $CPUModel=$CPUModel
+            $CPUModelNot=$CPUModelNot
+            $CPUSpeedLessThan=$CPUSpeedLessThan
+            $CPUSpeedMoreThan=$CPUSpeedMoreThan
+            $HDDSpaceFreeLessThan=$HDDSpaceFreeLessThan
+            $HDDSpaceFreeMoreThan=$HDDSpaceFreeMoreThan
+            $HDDSpaceTotalLessThan=$HDDSpaceTotalLessThan
+            $HDDSpaceTotalMoreThan=$HDDSpaceTotalMoreThan
+            $RAMLessThan=$RAMLessThan
+            $RAMMoreThan=$RAMMoreThan
+            $GPU=$GPU
+            $GPUNot=$GPUNot
+            $IgnoreUnresponsive=$IgnoreUnresponsive
+            $computer=$computer
+            $computers=$computers
+            $i=$i} #>
+
+        #Start-Job -InitializationScript $Init_Script -Scriptblock $ScriptBlock -ArgumentList $computer, $computers, $i, $IgnoreUnresponsive, $CompName, $CompIP, $SubnetScope, $Make, $MakeNot, $Model, $ModelNot, $Owner, $OwnerNot, $OSVer, $OSVerNot, $OSArch, $OSArchNot, $CPUModel, $CPUModelNot, $CPUSpeedLessThan, $CPUSpeedMoreThan, $HDDSpaceFreeLessThan, $HDDSpaceFreeMoreThan, $HDDSpaceTotalLessThan, $HDDSpaceTotalMoreThan, $RAMLessThan, $RAMMoreThan, $GPU, $GPUNot
+       <# Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $computer, $computers, $i, $IgnoreUnresponsive, $CompName, $CompIP, $SubnetScope, $Make, $MakeNot, $Model, $ModelNot, $Owner, $OwnerNot, $OSVer, $OSVerNot, $OSArch, $OSArchNot, $CPUModel, $CPUModelNot, $CPUSpeedLessThan, $CPUSpeedMoreThan, $HDDSpaceFreeLessThan, $HDDSpaceFreeMoreThan, $HDDSpaceTotalLessThan, $HDDSpaceTotalMoreThan, $RAMLessThan, $RAMMoreThan, $GPU, $GPUNot -AsJob
+        }
+        Get-Job
+        While (Get-Job -State "Running"){start-sleep 10 }
+        Get-Job | Receive-Job #>
+        }
+            
+    End {
+        $range.EntireColumn.AutoFit()
+        $excel.ActiveWorkbook._SaveAs("Inventory_" + $date)
+
+        $previousdatenormal = (Get-Date).AddDays(-1)
+        $previousdate = $previousdatenormal.tostring("yyyyMMdd")
+        $previouspath = ".\Inventory_" + $previousdate + ".xlsx"
+        $previousexcel = New-Object -ComObject Excel.Application
+        $previousexcel.visible = $True
+        $previousworkbook = $previousexcel.Workbooks.Open($previouspath)
+        $previousWorksheets = $previousWorkbooks.worksheets
+        $previousworksheet = $previousworkbook.previousWorksheets.Item(1)
+
+        $referencerange = $excelitem.Range("B1").EntireColumn
+        $reference = $excelitem.Cells.Value
+
+        Foreach ($reference in $referencerange){
+        write-host $reference
+            For ($x=1; $x -le $excelitem.UsedRange.Rows.Count; $x++) {
+            write-host "secondary"
+                if ($previousworksheet.Cells.Item($x, 1).Value() -eq $reference){
+                write-host "tertiary"
+                    for ($y=2; $y -le $excelitem.UsedRange.Rows.Count; $y++) {
+                        if ($excelitem.Cells.Item($x, $y).Value() -ne $previousworksheet.Cells.Item($x, $y).Value()){
+                        write-host "quandary"
+                            $excelitem.Cells.Item($x, $y).Interior.ColorIndex = 3
+                            write-host "different" + $x + $y
+                            
+                        }
+
+                    }
+
+                }
+            }
+
+        }
+
+
+
+        if (Test-Path -Path .\Failed$date.txt){Write-Warning "Some items were found to be unresponsive during query. A list can be found in the directory under Failed_Inventory_Request"
+            $Failed = Get-Content .\Failed$date.txt
+            $ClientIPCheck = Get-Content .\DHCPComputer$date.txt
+            $ClientNameCheck = Get-Content .\DHCPName$date.txt
+            for ($i=0; $i -lt $Failed.Length; $i++){
+                $Defective = $Failed[$i] + " --- " + $ClientNameCheck[[array]::IndexOf($ClientIPCheck, $Failed[$i])]
+                $Defective | Out-File -FilePath .\Failed_Inventory_Request$date.txt -Append}
+            Remove-Item .\Failed$date.txt}
+        
+
+        #$excel.Close
+        #[void]$excel.Quit()
+        #$previousexcel.Close
+        #[void]$previousexcel.Quit()
+
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($previousexcel)
+
+
+       <# $CompName =""
+        $CompIP =""
+        $SubnetScope =""
+        $Make =""
+        $MakeNot =""
+        $Model =""
+        $ModelNot =""
+        $Owner =""
+        $OwnerNot =""
+        $OSVer =""
+        $OSVerNot =""
+        $OSArch =""
+        $OSArchNot =""
+        $CPUModel =""
+        $CPUModelNot =""
+        $CPUSpeedLessThan =""
+        $CPUSpeedMoreThan =""
+        $HDDSpaceLessThan =""
+        $HDDSpaceMoreThan =""
+        $RAMLessThan =""
+        $RAMMoreThan =""
+        $GPU =""
+        $GPUNot ="" #>
+
+        #Remove-Item .\DHCPComputertest.txt
+        #Remove-Item .\ActiveComputers.txt
+
+
+      }
+}
